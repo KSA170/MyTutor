@@ -124,6 +124,16 @@ SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... SUPABASE_ANON_KEY=... npm run see
 # Run it twice — the second run asserts prompt-cache hits.
 ```
 
+## Trust model note
+
+Study metrics (session events, counters) are written through the user's own
+RLS-scoped session, so a technically savvy user could inflate their *own*
+stats/points via the API — acceptable for a personal app where the
+leaderboard is only visible to accepted friends. Item purchases and point
+awards are already server-enforced (SECURITY DEFINER). If leaderboard
+integrity ever matters, move `session_events` writes behind a definer
+function the same way.
+
 ## Cost notes
 
 Tutoring runs on `claude-opus-5` with prompt caching (the static prompt +

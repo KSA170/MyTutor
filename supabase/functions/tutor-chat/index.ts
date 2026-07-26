@@ -137,6 +137,18 @@ async function runTurn(
     : 1;
   const isFirstTurn = history.length === 0;
 
+  // The cap can slice mid tool-exchange: the replay must start with a plain
+  // user message (not a tool_result pair whose tool_use was truncated away,
+  // not an assistant/system row — messages[0] must be role "user").
+  while (history.length > 0) {
+    const first = history[0];
+    const isPlainUser = first.role === "user" &&
+      (!Array.isArray(first.content) ||
+        !first.content.some((b: Json) => b?.type === "tool_result"));
+    if (isPlainUser) break;
+    history.shift();
+  }
+
   const messages: Json[] = history.map((row: Json) => ({
     role: row.role,
     content: row.content,
@@ -179,15 +191,21 @@ async function runTurn(
   messages.push({ role: "user", content: userBlocks });
 
   // ---- 5. System-role injections (persisted for replay stability) ------
+  // Merged into ONE system message per turn: consecutive system-role
+  // messages are not valid (each must be last or followed by an assistant
+  // turn).
+  const injections: string[] = [];
   if (isFirstTurn || modeSwitched) {
-    const text = (modeSwitched ? "Mode switched. " : "") + modeInstruction(mode);
-    await persist("system", text, "mode");
-    messages.push({ role: "system", content: text });
+    injections.push(
+      (modeSwitched ? "Mode switched. " : "") + modeInstruction(mode),
+    );
   }
   const statusLine = await breakStatusLine(supabase, session);
-  if (statusLine) {
-    await persist("system", statusLine, "status");
-    messages.push({ role: "system", content: statusLine });
+  if (statusLine) injections.push(statusLine);
+  if (injections.length > 0) {
+    const text = injections.join("\n\n");
+    await persist("system", text, statusLine ? "status" : "mode");
+    messages.push({ role: "system", content: text });
   }
 
   // ---- 6. Tools (deterministic order: server tool first, then customs) --
@@ -312,12 +330,16 @@ async function runTurn(
       );
     }
 
-    const displayText = final.content
+    const persistedContent = sanitizeAssistantContent(
+      final.content,
+      final.stop_reason,
+    );
+    const displayText = persistedContent
       .filter((b: Json) => b.type === "text")
       .map((b: Json) => b.text)
       .join("");
-    lastAssistantId = await persist("assistant", final.content, displayText);
-    messages.push({ role: "assistant", content: final.content });
+    lastAssistantId = await persist("assistant", persistedContent, displayText);
+    messages.push({ role: "assistant", content: persistedContent });
 
     if (final.stop_reason === "refusal") {
       channel.emit({
@@ -360,6 +382,34 @@ async function runTurn(
 
   channel.emit({ type: "done", messageId: lastAssistantId, usage });
   channel.close();
+}
+
+/**
+ * Make a final assistant message safe to persist + replay.
+ * - max_tokens can truncate mid tool call: a dangling tool_use with no
+ *   tool_result in the next message 400s every later turn — drop from the
+ *   first unpaired call onward.
+ * - refusal (and the above) can leave empty content, which is also invalid
+ *   in replay — substitute a placeholder text block.
+ */
+function sanitizeAssistantContent(content: Json[], stopReason: string): Json[] {
+  let blocks = content;
+  if (stopReason === "max_tokens") {
+    blocks = [];
+    for (let i = 0; i < content.length; i++) {
+      const b = content[i];
+      if (b.type === "tool_use") break; // results will never be supplied
+      if (b.type === "server_tool_use") {
+        const next = content[i + 1];
+        if (!next || !String(next.type ?? "").endsWith("_result")) break;
+      }
+      blocks.push(b);
+    }
+  }
+  if (blocks.length === 0) {
+    return [{ type: "text", text: "[response interrupted]" }];
+  }
+  return blocks;
 }
 
 /** Add the 3rd cache breakpoint to a deep copy of the newest block. */

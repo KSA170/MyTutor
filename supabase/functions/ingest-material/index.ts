@@ -31,7 +31,9 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 // deno-lint-ignore no-explicit-any
 type Json = any;
 
-const MAX_PDF_BYTES = 30 * 1024 * 1024;
+// Base64 inflates ~4/3, and the whole request must stay under the API's
+// 32MB cap — so cap the raw file well below that.
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const MAX_VISION_PAGES = 100;
 
 Deno.serve(async (req: Request) => {
@@ -166,7 +168,7 @@ async function transcribePdfWithVision(
   pageCount: number,
 ): Promise<PageText[]> {
   if (bytes.byteLength > MAX_PDF_BYTES) {
-    throw new Error("Scanned PDF too large for vision transcription (>30MB)");
+    throw new Error("Scanned PDF too large for vision transcription (>20MB)");
   }
   if (pageCount > MAX_VISION_PAGES) {
     throw new Error(
@@ -294,7 +296,17 @@ async function summarize(
     .filter((b: Json) => b.type === "text")
     .map((b: Json) => b.text)
     .join("");
-  return JSON.parse(text) as MaterialSummary;
+  try {
+    return JSON.parse(text) as MaterialSummary;
+  } catch {
+    // Refusal/truncation can break the structured output — degrade to a
+    // usable summary rather than failing the whole ingestion.
+    return {
+      summary: fullText.slice(0, 400),
+      topics: [],
+      suggested_title: title,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------

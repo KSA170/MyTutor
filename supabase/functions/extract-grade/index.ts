@@ -56,13 +56,13 @@ Deno.serve(async (req: Request) => {
             type: "object",
             properties: {
               title: {
-                type: ["string", "null"],
+                anyOf: [{ type: "string" }, { type: "null" }],
                 description: "Name of the test/assignment if visible.",
               },
-              score: { type: ["number", "null"] },
-              max_score: { type: ["number", "null"] },
+              score: { anyOf: [{ type: "number" }, { type: "null" }] },
+              max_score: { anyOf: [{ type: "number" }, { type: "null" }] },
               feedback: {
-                type: ["string", "null"],
+                anyOf: [{ type: "string" }, { type: "null" }],
                 description: "Teacher comments, transcribed.",
               },
               topics: {
@@ -103,7 +103,12 @@ Deno.serve(async (req: Request) => {
       .filter((b: Json) => b.type === "text")
       .map((b: Json) => b.text)
       .join("");
-    const parsed = JSON.parse(text) as ExtractGradeResponse;
+    let parsed: ExtractGradeResponse;
+    try {
+      parsed = JSON.parse(text) as ExtractGradeResponse;
+    } catch {
+      throw new HttpError(502, "Could not read the photo — enter the grade manually");
+    }
     return jsonResponse(parsed);
   } catch (err) {
     return errorResponse(err);

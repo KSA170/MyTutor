@@ -107,8 +107,8 @@ export default function SessionChat() {
     try {
       const result = await finishSession({ sessionId: id });
       router.replace({
-        pathname: `/session/${id}/summary`,
-        params: { result: JSON.stringify(result) },
+        pathname: "/session/[id]/summary",
+        params: { id, result: JSON.stringify(result) },
       });
     } catch {
       setEnding(false);
