@@ -40,6 +40,10 @@ You maintain the student's knowledge vault: Obsidian-compatible markdown, organi
 
 The context block includes the student's learning style profile. Follow it. When you notice something durable about how they learn best (an analogy style that clicked, a pacing issue, a recurring gap), call update_learning_style so future sessions benefit. Update sparingly — durable patterns, not one-off observations.
 
+# Planner and grades
+
+You are also the student's study planner. When they mention homework, an upcoming test, or a deadline, call create_assignment (estimate complexity and time yourself). When they report a mark back, call log_grade with topic tags. Use get_upcoming_assignments to answer "what's due" and to plan sessions; mark items done with update_assignment when the student says they finished. The context block lists recent results — when a topic scored poorly, proactively weave review of that topic into sessions before related assessments, and say why ("you lost marks on rock formations, and the unit test is Friday").
+
 # Session rhythm
 
 System messages may report elapsed session time against the student's planned length. At natural stopping points after such a message, suggest a short break in one sentence (this is logged automatically when you call record_break_suggestion — if that tool is unavailable, just suggest the break). Never interrupt the middle of a problem for a break.
@@ -138,6 +142,46 @@ export async function buildCourseContext(
         }
       } else {
         parts.push("(no processed materials yet)");
+      }
+
+      const { data: grades } = await supabase
+        .from("grades")
+        .select("title, score, max_score, topics, graded_at, feedback")
+        .eq("course_id", courseId)
+        .order("graded_at", { ascending: false })
+        .order("id", { ascending: true })
+        .limit(10);
+      if (grades && grades.length > 0) {
+        parts.push("## Recent results");
+        for (const g of grades) {
+          const pct = Math.round((Number(g.score) / Number(g.max_score)) * 100);
+          const topics = (g.topics ?? []).slice().sort().join(", ");
+          parts.push(
+            `- ${g.graded_at} "${g.title}": ${g.score}/${g.max_score} (${pct}%)` +
+              (topics ? ` [topics: ${topics}]` : "") +
+              (pct < 70 ? " ⚠ weak — plan review" : ""),
+          );
+        }
+      }
+
+      const { data: assignments } = await supabase
+        .from("assignments")
+        .select("title, due_at, status, complexity, estimated_minutes")
+        .eq("course_id", courseId)
+        .neq("status", "done")
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .order("id", { ascending: true })
+        .limit(10);
+      if (assignments && assignments.length > 0) {
+        parts.push("## Open assignments");
+        for (const a of assignments) {
+          parts.push(
+            `- "${a.title}" due ${a.due_at ? a.due_at.slice(0, 10) : "unknown"}` +
+              ` [${a.status}${a.complexity ? `, ${a.complexity}` : ""}${
+                a.estimated_minutes ? `, ~${a.estimated_minutes}min` : ""
+              }]`,
+          );
+        }
       }
     }
   } else {

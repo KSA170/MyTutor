@@ -8,9 +8,12 @@
  */
 
 import type {
+  AssignmentComplexity,
+  AssignmentStatus,
   ConnectorStatus,
   CreationContent,
   CreationKind,
+  FriendshipStatus,
   LearningStylePreferences,
   MaterialKind,
   MaterialStatus,
@@ -23,6 +26,7 @@ import type {
 export interface Profile {
   id: string;
   display_name: string | null;
+  handle: string | null;
   grade_level: string | null;
   program: string | null;
   timezone: string | null;
@@ -149,6 +153,59 @@ export interface Creation {
   content: CreationContent;
   note_path: string | null;
   created_at: string;
+}
+
+export interface Assignment {
+  id: string;
+  user_id: string;
+  course_id: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  estimated_minutes: number | null;
+  complexity: AssignmentComplexity | null;
+  status: AssignmentStatus;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface Grade {
+  id: string;
+  user_id: string;
+  course_id: string;
+  assignment_id: string | null;
+  title: string;
+  score: number;
+  max_score: number;
+  weight: number | null;
+  feedback: string | null;
+  topics: string[];
+  graded_at: string;
+  created_at: string;
+}
+
+export interface Friendship {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: FriendshipStatus;
+  created_at: string;
+}
+
+export interface PointsLedgerEntry {
+  id: string;
+  user_id: string;
+  delta: number;
+  reason: string;
+  ref_id: string | null;
+  created_at: string;
+}
+
+export interface TreeState {
+  user_id: string;
+  owned_items: string[];
+  equipped_items: string[];
+  updated_at: string;
 }
 
 export interface UserConnector {

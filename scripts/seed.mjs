@@ -151,6 +151,47 @@ if (!existingMaterial) {
   console.log("Material already seeded");
 }
 
+// --- assignments + grades (Phase 2) ---------------------------------------
+const { data: existingAssignment } = await admin
+  .from("assignments")
+  .select("id")
+  .eq("user_id", userId)
+  .eq("title", "Rock cycle lab report")
+  .maybeSingle();
+
+if (!existingAssignment) {
+  const inThreeDays = new Date(Date.now() + 3 * 86400_000);
+  await admin.from("assignments").insert([
+    {
+      user_id: userId,
+      course_id: courseId,
+      title: "Rock cycle lab report",
+      description: "Write up the rock identification lab.",
+      due_at: inThreeDays.toISOString(),
+      estimated_minutes: 90,
+      complexity: "medium",
+    },
+    {
+      user_id: userId,
+      course_id: courseId,
+      title: "Unit 1 Geology test",
+      due_at: new Date(Date.now() + 7 * 86400_000).toISOString(),
+      estimated_minutes: 60,
+      complexity: "high",
+    },
+  ]);
+  await admin.from("grades").insert({
+    user_id: userId,
+    course_id: courseId,
+    title: "Geology quiz 1",
+    score: 6,
+    max_score: 10,
+    topics: ["rock formations", "igneous rocks"],
+    feedback: "Mixed up intrusive and extrusive cooling rates.",
+  });
+  console.log("Assignments + grade seeded");
+}
+
 // --- session (teaching mode) ----------------------------------------------
 const { data: session, error: sessionErr } = await admin
   .from("sessions")

@@ -5,6 +5,12 @@ import { giveHint, revealAnswer } from "./hints.ts";
 import { recordAnswerOutcome, recordBreakSuggestion } from "./metrics.ts";
 import { updateLearningStyle } from "./style.ts";
 import { createStudyMaterial } from "./creations.ts";
+import {
+  createAssignment,
+  getUpcomingAssignments,
+  logGrade,
+  updateAssignment,
+} from "./planner.ts";
 
 export type { Tool, ToolContext, ToolDefinition };
 
@@ -14,15 +20,19 @@ export type { Tool, ToolContext, ToolDefinition };
  * conditionally per user or per mode (mode behavior is prompt-driven).
  */
 const ALL_TOOLS: Tool[] = [
+  createAssignment,
   createNote,
   createStudyMaterial,
   getMaterial,
+  getUpcomingAssignments,
   giveHint,
   listNotes,
+  logGrade,
   recordAnswerOutcome,
   recordBreakSuggestion,
   revealAnswer,
   searchMaterials,
+  updateAssignment,
   updateLearningStyle,
   updateNote,
 ].sort((a, b) => a.definition.name.localeCompare(b.definition.name));

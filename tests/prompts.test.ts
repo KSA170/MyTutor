@@ -16,6 +16,8 @@ function fakeDb(fixtures: {
   learning_style_profiles?: any;
   courses?: any;
   materials?: any[];
+  grades?: any[];
+  assignments?: any[];
 }) {
   return {
     from(table: string) {
@@ -23,7 +25,9 @@ function fakeDb(fixtures: {
       const builder: any = {
         select: () => builder,
         eq: () => builder,
+        neq: () => builder,
         order: () => builder,
+        limit: () => builder,
         single: () => Promise.resolve({ data: fixture ?? null }),
         then: (resolve: (v: any) => void) =>
           Promise.resolve({ data: fixture ?? [] }).then(resolve),
@@ -64,6 +68,25 @@ const FIXTURES = {
       topics: ["rocks", "minerals"],
     },
   ],
+  grades: [
+    {
+      title: "Quiz 1",
+      score: 6,
+      max_score: 10,
+      topics: ["rock formations"],
+      graded_at: "2026-07-20",
+      feedback: null,
+    },
+  ],
+  assignments: [
+    {
+      title: "Lab report",
+      due_at: "2026-08-01T00:00:00Z",
+      status: "todo",
+      complexity: "medium",
+      estimated_minutes: 90,
+    },
+  ],
 };
 
 describe("buildCourseContext determinism (the cache invariant)", () => {
@@ -73,6 +96,9 @@ describe("buildCourseContext determinism (the cache invariant)", () => {
     expect(a).toBe(b);
     expect(a).toContain("Science 10");
     expect(a).toContain("Lecture 1");
+    expect(a).toContain("Quiz 1"); // recent results feed review planning
+    expect(a).toContain("weak — plan review"); // 60% flags weak topic
+    expect(a).toContain("Lab report"); // open assignments visible
     expect(a).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps in the prefix
   });
 

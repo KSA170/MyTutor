@@ -51,6 +51,10 @@ export default function SessionSummary() {
       label: "Notes created",
       value: String(parsed?.notesCreated ?? "—"),
     },
+    {
+      label: "Points earned",
+      value: `+${parsed?.pointsAwarded ?? session?.points_awarded ?? 0}`,
+    },
   ];
 
   return (

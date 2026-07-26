@@ -10,7 +10,12 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": false,
-      "bundleIdentifier": "com.mytutor.app"
+      "bundleIdentifier": "com.mytutor.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "MyTutor uses your photo library so you can upload pictures of course materials, homework problems, and marked tests.",
+        "NSCameraUsageDescription": "MyTutor uses the camera so you can snap course materials and homework problems for your tutor.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -34,7 +39,8 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

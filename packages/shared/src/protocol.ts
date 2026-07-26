@@ -182,6 +182,61 @@ export interface FinishSessionResponse {
   hintsGiven: number;
   answersRevealed: number;
   notesCreated: number;
+  /** Study points awarded for this session (0 for abandoned sessions). */
+  pointsAwarded: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: planner, grades, analytics
+// ---------------------------------------------------------------------------
+
+export type AssignmentStatus = "todo" | "in_progress" | "done";
+
+export type AssignmentComplexity = "low" | "medium" | "high";
+
+/** Row shape returned by the get_daily_study_stats RPC. */
+export interface DailyStudyStats {
+  day: string;
+  minutes: number;
+  sessions: number;
+  questions: number;
+  correct: number;
+  hints: number;
+}
+
+export interface WeeklyRecapResponse {
+  recap: string;
+  notePath: string | null;
+}
+
+export interface ExtractGradeRequest {
+  /** Storage path of an uploaded photo of the marked test/assignment. */
+  storagePath: string;
+  mimeType: string;
+}
+
+export interface ExtractGradeResponse {
+  title: string | null;
+  score: number | null;
+  max_score: number | null;
+  feedback: string | null;
+  topics: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: social + gamification
+// ---------------------------------------------------------------------------
+
+export type FriendshipStatus = "pending" | "accepted" | "blocked";
+
+/** Row shape returned by the get_leaderboard RPC. */
+export interface LeaderboardRow {
+  user_id: string;
+  display_name: string;
+  handle: string | null;
+  points_week: number;
+  minutes_week: number;
+  points_total: number;
 }
 
 // ---------------------------------------------------------------------------

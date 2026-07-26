@@ -2,15 +2,22 @@ import { fetch as expoFetch } from "expo/fetch";
 import { Platform } from "react-native";
 import type {
   ChatAttachment,
+  ExtractGradeResponse,
   FinishSessionRequest,
   FinishSessionResponse,
   MaterialKind,
   SseEvent,
   TutorChatRequest,
+  WeeklyRecapResponse,
 } from "@mytutor/shared";
 import { MATERIALS_BUCKET } from "@mytutor/shared";
 import { authHeaders, functionUrl, supabase } from "./supabase";
 import { SseParser } from "./sse";
+import {
+  DEMO,
+  demoFinishSession,
+  demoStreamTutorChat,
+} from "./demo";
 
 /** Stream one tutor-chat turn; onEvent fires for every SSE event. */
 export async function streamTutorChat(
@@ -18,6 +25,7 @@ export async function streamTutorChat(
   onEvent: (event: SseEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  if (DEMO) return demoStreamTutorChat(onEvent);
   const headers = await authHeaders();
   const res = await expoFetch(functionUrl("tutor-chat"), {
     method: "POST",
@@ -51,6 +59,9 @@ export async function streamTutorChat(
 export async function finishSession(
   request: FinishSessionRequest,
 ): Promise<FinishSessionResponse> {
+  if (DEMO) {
+    return { ...demoFinishSession, sessionId: request.sessionId };
+  }
   const headers = await authHeaders();
   const res = await expoFetch(functionUrl("finish-session"), {
     method: "POST",
@@ -62,6 +73,7 @@ export async function finishSession(
 }
 
 export async function triggerIngestion(materialId: string): Promise<void> {
+  if (DEMO) return;
   const headers = await authHeaders();
   await expoFetch(functionUrl("ingest-material"), {
     method: "POST",
@@ -72,6 +84,7 @@ export async function triggerIngestion(materialId: string): Promise<void> {
 
 /** Download the vault zip. Returns bytes; caller decides how to save/share. */
 export async function downloadVaultZip(): Promise<ArrayBuffer> {
+  if (DEMO) return new TextEncoder().encode("demo vault").buffer as ArrayBuffer;
   const headers = await authHeaders();
   const res = await expoFetch(functionUrl("export-vault"), {
     method: "POST",
@@ -80,6 +93,57 @@ export async function downloadVaultZip(): Promise<ArrayBuffer> {
   });
   if (!res.ok) throw new Error(`export failed (${res.status})`);
   return await res.arrayBuffer();
+}
+
+/** Generate (and vault-save) this week's study recap + recommendations. */
+export async function requestWeeklyRecap(): Promise<WeeklyRecapResponse> {
+  if (DEMO) {
+    return { recap: "Recap refreshed (demo).", notePath: null };
+  }
+  const headers = await authHeaders();
+  const res = await expoFetch(functionUrl("weekly-recap"), {
+    method: "POST",
+    headers,
+    body: "{}",
+  });
+  if (!res.ok) throw new Error(`weekly-recap failed (${res.status})`);
+  return (await res.json()) as WeeklyRecapResponse;
+}
+
+/** Prefill a grade form from a photo of a marked test. */
+export async function extractGradeFromPhoto(
+  storagePath: string,
+  mimeType: string,
+): Promise<ExtractGradeResponse> {
+  if (DEMO) {
+    return {
+      title: "Geology quiz 2",
+      score: 8,
+      max_score: 10,
+      feedback: "Much better on cooling rates!",
+      topics: ["igneous rocks", "rock cycle"],
+    };
+  }
+  const headers = await authHeaders();
+  const res = await expoFetch(functionUrl("extract-grade"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ storagePath, mimeType }),
+  });
+  if (!res.ok) throw new Error(`extract-grade failed (${res.status})`);
+  return (await res.json()) as ExtractGradeResponse;
+}
+
+/** Permanently delete the account and all data (App Store requirement). */
+export async function deleteAccount(): Promise<void> {
+  if (DEMO) return;
+  const headers = await authHeaders();
+  const res = await expoFetch(functionUrl("delete-account"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ confirm: "DELETE" }),
+  });
+  if (!res.ok) throw new Error(`delete-account failed (${res.status})`);
 }
 
 export function kindForMime(mime: string, name: string): MaterialKind {
@@ -112,6 +176,7 @@ export async function uploadToMaterials(
   file: PickedFile,
   prefix: string,
 ): Promise<string> {
+  if (DEMO) return `demo/${prefix}/${file.name}`;
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
   if (!userId) throw new Error("Not signed in");

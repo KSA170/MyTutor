@@ -27,6 +27,20 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="planner"
+        options={{
+          title: "Planner",
+          tabBarIcon: ({ focused }) => <TabIcon glyph="🗓️" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: "Stats",
+          tabBarIcon: ({ focused }) => <TabIcon glyph="📊" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="library"
         options={{
           title: "Library",

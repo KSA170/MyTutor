@@ -1,7 +1,8 @@
 import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { treeStageForPoints, TREE_STAGE_EMOJI } from "@mytutor/shared";
 import { Button, Card, Label, Screen, Subtitle, Title } from "@/components/ui";
-import { useCourses, useRecentSessions } from "@/api/queries";
+import { useCourses, usePoints, useRecentSessions } from "@/api/queries";
 import { useAuth } from "@/lib/auth";
 import { colors, spacing } from "@/theme";
 
@@ -16,8 +17,10 @@ export default function Home() {
   const { profile } = useAuth();
   const { data: courses } = useCourses();
   const { data: sessions } = useRecentSessions(5);
+  const { data: points } = usePoints();
 
   const active = (sessions ?? []).find((s) => s.status === "active");
+  const stage = treeStageForPoints(points?.lifetime ?? 0);
 
   return (
     <Screen>
@@ -41,6 +44,28 @@ export default function Home() {
             onPress={() => router.push("/session/new")}
           />
         )}
+
+      <Card onPress={() => router.push("/tree")}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.m,
+          }}
+        >
+          <Text style={{ fontSize: 40 }}>{TREE_STAGE_EMOJI[stage]}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: "600", fontSize: 16, color: colors.text }}>
+              Your brain tree
+            </Text>
+            <Text style={{ color: colors.textMuted }}>
+              {points?.balance ?? 0} points to spend ·{" "}
+              {points?.week ?? 0} earned this week
+            </Text>
+          </View>
+          <Text style={{ color: colors.primary, fontWeight: "700" }}>→</Text>
+        </View>
+      </Card>
 
       <Label>Courses</Label>
       {(courses ?? []).map((c) => (

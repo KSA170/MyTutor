@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { Alert, Platform, Text, View } from "react-native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import {
@@ -11,7 +11,7 @@ import {
   Subtitle,
   Title,
 } from "@/components/ui";
-import { downloadVaultZip } from "@/lib/api";
+import { deleteAccount, downloadVaultZip } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useChatStore } from "@/state/chat";
@@ -57,6 +57,31 @@ export default function Settings() {
     await supabase.auth.signOut();
   };
 
+  const confirmDeleteAccount = () => {
+    const run = async () => {
+      try {
+        await deleteAccount();
+        resetChat();
+        await supabase.auth.signOut();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Deletion failed");
+      }
+    };
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (confirm("Delete your account and ALL data permanently?")) void run();
+      return;
+    }
+    Alert.alert(
+      "Delete account?",
+      "This permanently deletes your account, courses, notes, and all study history. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete everything", style: "destructive", onPress: () => void run() },
+      ],
+    );
+  };
+
   return (
     <Screen>
       <View style={{ marginTop: spacing.s, gap: spacing.xs }}>
@@ -94,7 +119,12 @@ export default function Settings() {
       </Card>
       <ErrorText>{error}</ErrorText>
 
-      <Button title="Sign out" variant="danger" onPress={signOut} />
+      <Button title="Sign out" variant="secondary" onPress={signOut} />
+      <Button
+        title="Delete account & all data"
+        variant="danger"
+        onPress={confirmDeleteAccount}
+      />
     </Screen>
   );
 }

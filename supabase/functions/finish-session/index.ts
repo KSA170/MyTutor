@@ -60,6 +60,17 @@ Deno.serve(async (req: Request) => {
       .update({ status: outcome, ended_at: endedAt.toISOString(), summary })
       .eq("id", session.id);
 
+    // Award study points (idempotent, definer-enforced formula).
+    let pointsAwarded = 0;
+    if (outcome === "completed") {
+      const { data: pts, error: ptsErr } = await supabase.rpc(
+        "award_session_points",
+        { p_session_id: session.id },
+      );
+      if (ptsErr) console.error("points award failed:", ptsErr.message);
+      pointsAwarded = pts ?? 0;
+    }
+
     // Re-read rollup counters (maintained by the session_events trigger).
     const { data: fresh } = await supabase
       .from("sessions")
@@ -90,6 +101,7 @@ Deno.serve(async (req: Request) => {
       hintsGiven: fresh?.hints_given ?? 0,
       answersRevealed: fresh?.answers_revealed ?? 0,
       notesCreated: notesCreated ?? 0,
+      pointsAwarded,
     };
     return jsonResponse(response);
   } catch (err) {

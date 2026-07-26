@@ -35,3 +35,12 @@ verify_jwt = true
 
 [functions.export-vault]
 verify_jwt = true
+
+[functions.weekly-recap]
+verify_jwt = true
+
+[functions.extract-grade]
+verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true

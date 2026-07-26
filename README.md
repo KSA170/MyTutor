@@ -5,7 +5,7 @@ materials, curriculum, and grade level once — then study with an agent that
 teaches from *your* class content, tracks your study habits, and builds you an
 Obsidian-compatible second brain as you learn.
 
-## What it does (Phase 1 — core tutor)
+## What it does
 
 - **Context-aware tutoring** — the agent is grounded in your uploaded
   materials (PDF, DOCX, screenshots, video), your curriculum, and your grade
@@ -24,9 +24,23 @@ Obsidian-compatible second brain as you learn.
   the agent over time, persisted across sessions.
 - **Session tracking** — time studied, questions answered, hints used, and
   break reminders based on your planned session length.
+- **Planner** — assignments and tests with due dates, complexity and time
+  estimates, and local due-date reminders. The tutor logs homework you
+  mention in chat and helps plan around it.
+- **Grades** — log marks (or scan a photo of a marked test), tag topics, and
+  the tutor schedules review of weak topics before related assessments.
+- **Stats** — study-habit dashboard (minutes, questions, correctness,
+  streaks), weak-topic detection, and an AI weekly recap with
+  recommendations, saved into your vault.
+- **Brain tree** — studying earns points (formula enforced server-side);
+  spend them growing and decorating your tree.
+- **Friends & leaderboard** — add friends by handle and compare weekly study
+  points and minutes.
+- **App Store groundwork** — in-app account deletion, privacy policy draft
+  ([docs/PRIVACY.md](docs/PRIVACY.md)), EAS build config, iOS permission
+  strings.
 
-Phase 2 (planner, grades, analytics) and Phase 3 (points, brain tree,
-friends/leaderboard, App Store prep) are designed in [docs/PLAN.md](docs/PLAN.md).
+The full build plan lives in [docs/PLAN.md](docs/PLAN.md).
 
 ## Architecture
 
@@ -38,8 +52,11 @@ supabase/
   functions/
     tutor-chat/      the agent loop (claude-opus-5, streaming SSE, prompt caching)
     ingest-material/ upload processing (unpdf/mammoth/Haiku vision + summaries)
-    finish-session/  session close + summary + vault note
+    finish-session/  session close + summary + vault note + points award
     export-vault/    Obsidian vault .zip export
+    weekly-recap/    AI study-habit recap (on demand or via pg_cron)
+    extract-grade/   photo of a marked test → prefilled grade entry
+    delete-account/  full account + data deletion (App Store requirement)
 scripts/           seed + curl smoke tests
 ```
 
@@ -80,7 +97,8 @@ supabase db push
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 
 # 5. Deploy edge functions
-supabase functions deploy tutor-chat ingest-material finish-session export-vault
+supabase functions deploy tutor-chat ingest-material finish-session \
+  export-vault weekly-recap extract-grade delete-account
 
 # 6. Configure the app
 cp apps/mobile/.env.example apps/mobile/.env
