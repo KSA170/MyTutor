@@ -20,18 +20,17 @@ import {
   userClient,
 } from "../_shared/db.ts";
 import {
-  CHUNK_TOKEN_TARGET,
   MATERIALS_BUCKET,
   type IngestMaterialRequest,
-} from "../../packages/shared/src/protocol.ts";
+} from "../../../packages/shared/src/protocol.ts";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
+import { chunkPages, type Chunk, type PageText } from "../_shared/chunking.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 // deno-lint-ignore no-explicit-any
 type Json = any;
 
-const CHUNK_CHAR_TARGET = CHUNK_TOKEN_TARGET * 4;
 const MAX_PDF_BYTES = 30 * 1024 * 1024;
 const MAX_VISION_PAGES = 100;
 
@@ -78,11 +77,6 @@ Deno.serve(async (req: Request) => {
     return errorResponse(err);
   }
 });
-
-interface PageText {
-  page: number | null;
-  text: string;
-}
 
 async function process(service: Json, material: Json): Promise<void> {
   let pages: PageText[] = [];
@@ -244,74 +238,6 @@ async function transcribeImage(
     .filter((b: Json) => b.type === "text")
     .map((b: Json) => b.text)
     .join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// Chunking — ~CHUNK_TOKEN_TARGET tokens per chunk, aligned to page boundaries
-// ---------------------------------------------------------------------------
-
-export interface Chunk {
-  seq: number;
-  page_start: number | null;
-  page_end: number | null;
-  content: string;
-  token_estimate: number;
-}
-
-export function chunkPages(pages: PageText[]): Chunk[] {
-  const chunks: Chunk[] = [];
-  let buf = "";
-  let start: number | null = null;
-  let end: number | null = null;
-
-  const flush = () => {
-    const content = buf.trim();
-    if (content) {
-      chunks.push({
-        seq: chunks.length,
-        page_start: start,
-        page_end: end,
-        content,
-        token_estimate: Math.ceil(content.length / 4),
-      });
-    }
-    buf = "";
-    start = null;
-    end = null;
-  };
-
-  for (const p of pages) {
-    if (!p.text) continue;
-    // A single giant page (or unpaged doc) is split on paragraph boundaries.
-    const pieces = p.text.length > CHUNK_CHAR_TARGET * 1.5
-      ? splitLongText(p.text)
-      : [p.text];
-    for (const piece of pieces) {
-      if (buf.length > 0 && buf.length + piece.length > CHUNK_CHAR_TARGET) {
-        flush();
-      }
-      if (start === null) start = p.page;
-      end = p.page;
-      buf += (buf ? "\n\n" : "") + piece;
-    }
-  }
-  flush();
-  return chunks;
-}
-
-function splitLongText(text: string): string[] {
-  const paragraphs = text.split(/\n\s*\n/);
-  const pieces: string[] = [];
-  let buf = "";
-  for (const para of paragraphs) {
-    if (buf.length > 0 && buf.length + para.length > CHUNK_CHAR_TARGET) {
-      pieces.push(buf);
-      buf = "";
-    }
-    buf += (buf ? "\n\n" : "") + para;
-  }
-  if (buf) pieces.push(buf);
-  return pieces;
 }
 
 // ---------------------------------------------------------------------------

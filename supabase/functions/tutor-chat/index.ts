@@ -44,7 +44,7 @@ import {
   type ChatAttachment,
   type TurnUsage,
   type TutorChatRequest,
-} from "../../packages/shared/src/protocol.ts";
+} from "../../../packages/shared/src/protocol.ts";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };

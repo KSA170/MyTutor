@@ -21,7 +21,7 @@ import {
   VAULT_TYPE_FOLDERS,
   type FinishSessionRequest,
   type FinishSessionResponse,
-} from "../../packages/shared/src/protocol.ts";
+} from "../../../packages/shared/src/protocol.ts";
 import { parseWikilinks, validateVaultPath } from "../_shared/vault.ts";
 
 // deno-lint-ignore no-explicit-any

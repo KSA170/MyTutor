@@ -60,8 +60,9 @@ export function renderNoteFile(note: {
       lines.push(`${key}: ${yamlScalar(value)}`);
     }
   }
-  lines.push("---", "");
-  return lines.join("\n") + note.content + (note.content.endsWith("\n") ? "" : "\n");
+  lines.push("---");
+  return lines.join("\n") + "\n\n" + note.content +
+    (note.content.endsWith("\n") ? "" : "\n");
 }
 
 function yamlScalar(value: unknown): string {
