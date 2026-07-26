@@ -10,13 +10,13 @@ import {
   Subtitle,
   Title,
 } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { http } from "@/lib/http";
 import { useAuth } from "@/lib/auth";
 import { spacing } from "@/theme";
 
 export default function OnboardingProfile() {
   const router = useRouter();
-  const { session, profile } = useAuth();
+  const { profile } = useAuth();
   const [gradeLevel, setGradeLevel] = useState(profile?.grade_level ?? "");
   const [program, setProgram] = useState(profile?.program ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -29,20 +29,18 @@ export default function OnboardingProfile() {
     }
     setBusy(true);
     setError(null);
-    const { error: err } = await supabase
-      .from("profiles")
-      .update({
+    try {
+      await http.patch("/profile", {
         grade_level: gradeLevel.trim(),
         program: program.trim() || null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
-      })
-      .eq("id", session!.user.id);
-    setBusy(false);
-    if (err) {
-      setError(err.message);
-      return;
+      });
+      router.push("/onboarding/course");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setBusy(false);
     }
-    router.push("/onboarding/course");
   };
 
   return (

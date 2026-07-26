@@ -1,5 +1,4 @@
 import { fetch as expoFetch } from "expo/fetch";
-import { Platform } from "react-native";
 import type {
   ChatAttachment,
   ExtractGradeResponse,
@@ -10,14 +9,16 @@ import type {
   TutorChatRequest,
   WeeklyRecapResponse,
 } from "@mytutor/shared";
-import { MATERIALS_BUCKET } from "@mytutor/shared";
-import { authHeaders, functionUrl, supabase } from "./supabase";
-import { SseParser } from "./sse";
 import {
-  DEMO,
-  demoFinishSession,
-  demoStreamTutorChat,
-} from "./demo";
+  API_URL,
+  ApiError,
+  downloadBinary,
+  getToken,
+  http,
+  uploadFile,
+} from "./http";
+import { SseParser } from "./sse";
+import { DEMO, demoFinishSession, demoStreamTutorChat } from "./demo";
 
 /** Stream one tutor-chat turn; onEvent fires for every SSE event. */
 export async function streamTutorChat(
@@ -26,10 +27,13 @@ export async function streamTutorChat(
   signal?: AbortSignal,
 ): Promise<void> {
   if (DEMO) return demoStreamTutorChat(onEvent);
-  const headers = await authHeaders();
-  const res = await expoFetch(functionUrl("tutor-chat"), {
+  const token = await getToken();
+  const res = await expoFetch(`${API_URL}/chat`, {
     method: "POST",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(request),
     signal,
   });
@@ -41,7 +45,7 @@ export async function streamTutorChat(
     } catch {
       // keep default message
     }
-    throw new Error(message);
+    throw new ApiError(res.status, message);
   }
 
   const reader = res.body.getReader();
@@ -59,55 +63,16 @@ export async function streamTutorChat(
 export async function finishSession(
   request: FinishSessionRequest,
 ): Promise<FinishSessionResponse> {
-  if (DEMO) {
-    return { ...demoFinishSession, sessionId: request.sessionId };
-  }
-  const headers = await authHeaders();
-  const res = await expoFetch(functionUrl("finish-session"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(request),
-  });
-  if (!res.ok) throw new Error(`finish-session failed (${res.status})`);
-  return (await res.json()) as FinishSessionResponse;
-}
-
-export async function triggerIngestion(materialId: string): Promise<void> {
-  if (DEMO) return;
-  const headers = await authHeaders();
-  await expoFetch(functionUrl("ingest-material"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ materialId }),
-  });
-}
-
-/** Download the vault zip. Returns bytes; caller decides how to save/share. */
-export async function downloadVaultZip(): Promise<ArrayBuffer> {
-  if (DEMO) return new TextEncoder().encode("demo vault").buffer as ArrayBuffer;
-  const headers = await authHeaders();
-  const res = await expoFetch(functionUrl("export-vault"), {
-    method: "POST",
-    headers,
-    body: "{}",
-  });
-  if (!res.ok) throw new Error(`export failed (${res.status})`);
-  return await res.arrayBuffer();
+  if (DEMO) return { ...demoFinishSession, sessionId: request.sessionId };
+  return await http.post<FinishSessionResponse>(
+    `/sessions/${request.sessionId}/finish`,
+    { outcome: request.outcome ?? "completed" },
+  );
 }
 
 /** Generate (and vault-save) this week's study recap + recommendations. */
 export async function requestWeeklyRecap(): Promise<WeeklyRecapResponse> {
-  if (DEMO) {
-    return { recap: "Recap refreshed (demo).", notePath: null };
-  }
-  const headers = await authHeaders();
-  const res = await expoFetch(functionUrl("weekly-recap"), {
-    method: "POST",
-    headers,
-    body: "{}",
-  });
-  if (!res.ok) throw new Error(`weekly-recap failed (${res.status})`);
-  return (await res.json()) as WeeklyRecapResponse;
+  return await http.post<WeeklyRecapResponse>("/recap");
 }
 
 /** Prefill a grade form from a photo of a marked test. */
@@ -115,35 +80,20 @@ export async function extractGradeFromPhoto(
   storagePath: string,
   mimeType: string,
 ): Promise<ExtractGradeResponse> {
-  if (DEMO) {
-    return {
-      title: "Geology quiz 2",
-      score: 8,
-      max_score: 10,
-      feedback: "Much better on cooling rates!",
-      topics: ["igneous rocks", "rock cycle"],
-    };
-  }
-  const headers = await authHeaders();
-  const res = await expoFetch(functionUrl("extract-grade"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ storagePath, mimeType }),
+  return await http.post<ExtractGradeResponse>("/extract-grade", {
+    storagePath,
+    mimeType,
   });
-  if (!res.ok) throw new Error(`extract-grade failed (${res.status})`);
-  return (await res.json()) as ExtractGradeResponse;
 }
 
 /** Permanently delete the account and all data (App Store requirement). */
 export async function deleteAccount(): Promise<void> {
-  if (DEMO) return;
-  const headers = await authHeaders();
-  const res = await expoFetch(functionUrl("delete-account"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ confirm: "DELETE" }),
-  });
-  if (!res.ok) throw new Error(`delete-account failed (${res.status})`);
+  await http.del("/account", { confirm: "DELETE" });
+}
+
+/** Download the vault zip. Returns bytes; caller decides how to save/share. */
+export async function downloadVaultZip(): Promise<ArrayBuffer> {
+  return await downloadBinary("/vault.zip");
 }
 
 export function kindForMime(mime: string, name: string): MaterialKind {
@@ -168,37 +118,16 @@ export interface PickedFile {
   mimeType: string;
 }
 
-/**
- * Upload a picked file to the materials bucket under the caller's uid.
- * Returns the storage path.
- */
+/** Upload a picked file; returns the storage path. */
 export async function uploadToMaterials(
   file: PickedFile,
   prefix: string,
 ): Promise<string> {
-  if (DEMO) return `demo/${prefix}/${file.name}`;
-  const { data: userData } = await supabase.auth.getUser();
-  const userId = userData.user?.id;
-  if (!userId) throw new Error("Not signed in");
-
-  const safeName = file.name.replace(/[^\w.\-() ]/g, "_");
-  const path = `${userId}/${prefix}/${crypto.randomUUID()}/${safeName}`;
-
-  let body: Blob | ArrayBuffer;
-  if (Platform.OS === "web") {
-    body = await (await fetch(file.uri)).blob();
-  } else {
-    body = await (await expoFetch(file.uri)).arrayBuffer();
-  }
-
-  const { error } = await supabase.storage
-    .from(MATERIALS_BUCKET)
-    .upload(path, body, { contentType: file.mimeType, upsert: false });
-  if (error) throw new Error(`Upload failed: ${error.message}`);
-  return path;
+  const uploaded = await uploadFile(file, prefix);
+  return uploaded.storagePath;
 }
 
-/** Register an uploaded file as course material and kick off ingestion. */
+/** Register an uploaded file as course material (ingestion starts server-side). */
 export async function registerMaterial(args: {
   courseId: string;
   title: string;
@@ -206,27 +135,15 @@ export async function registerMaterial(args: {
   mimeType: string;
   sizeBytes?: number;
 }): Promise<string> {
-  const { data: userData } = await supabase.auth.getUser();
-  const userId = userData.user?.id;
-  if (!userId) throw new Error("Not signed in");
-
-  const { data, error } = await supabase
-    .from("materials")
-    .insert({
-      user_id: userId,
-      course_id: args.courseId,
-      title: args.title,
-      kind: kindForMime(args.mimeType, args.title),
-      storage_path: args.storagePath,
-      mime_type: args.mimeType,
-      size_bytes: args.sizeBytes ?? null,
-      status: "uploaded",
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  await triggerIngestion(data.id);
-  return data.id;
+  const row = await http.post<{ id: string }>("/materials", {
+    courseId: args.courseId,
+    title: args.title,
+    storagePath: args.storagePath,
+    mimeType: args.mimeType,
+    sizeBytes: args.sizeBytes,
+    kind: kindForMime(args.mimeType, args.title),
+  });
+  return row.id;
 }
 
 export type { ChatAttachment };

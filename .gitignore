@@ -11,3 +11,4 @@ expo-env.d.ts
 supabase/.temp/
 supabase/.branches/
 coverage/
+apps/api/data/

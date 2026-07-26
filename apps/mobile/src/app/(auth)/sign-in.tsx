@@ -9,11 +9,12 @@ import {
   Subtitle,
   Title,
 } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import { ThemedText } from "@/components/themed-text";
 import { colors, spacing } from "@/theme";
 
 export default function SignIn() {
+  const auth = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,13 +23,14 @@ export default function SignIn() {
   const signIn = async () => {
     setBusy(true);
     setError(null);
-    const { error: err } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    if (err) setError(err.message);
-    setBusy(false);
-    // Redirect happens in the root layout once the session lands.
+    try {
+      await auth.signIn(email.trim(), password);
+      // Redirect happens in the root layout once the session lands.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

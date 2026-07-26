@@ -6,7 +6,7 @@ import type {
   SseEvent,
 } from "@mytutor/shared";
 import { streamTutorChat } from "../lib/api";
-import { supabase } from "../lib/supabase";
+import { http } from "../lib/http";
 
 export interface ChatItem {
   id: string;
@@ -48,33 +48,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadSession: async (sessionId: string) => {
     if (get().sessionId === sessionId) return;
     set({ sessionId, items: [], sending: false, hintCount: 0 });
-    const [{ data: rows }, { data: session }] = await Promise.all([
-      supabase
-        .from("messages")
-        .select("id, role, display_text")
-        .eq("session_id", sessionId)
-        .neq("role", "system")
-        .not("display_text", "is", null)
-        .order("seq", { ascending: true }),
-      supabase
-        .from("sessions")
-        .select("hints_given")
-        .eq("id", sessionId)
-        .single(),
-    ]);
+    let rows: { id: string; role: string; display_text: string }[] = [];
+    let hintsGiven = 0;
+    try {
+      const [messages, session] = await Promise.all([
+        http.get<{ id: string; role: string; display_text: string }[]>(
+          `/sessions/${sessionId}/messages`,
+        ),
+        http.get<{ hints_given: number }>(`/sessions/${sessionId}`),
+      ]);
+      rows = messages;
+      hintsGiven = session?.hints_given ?? 0;
+    } catch {
+      // Brand-new session (or offline) — start empty.
+    }
     // Guard against a session switch while we were loading.
     if (get().sessionId !== sessionId) return;
     set({
-      items: (rows ?? [])
+      items: rows
         .filter((r) => r.display_text)
         .map((r) => ({
           id: r.id,
           role: r.role as "user" | "assistant",
-          text: r.display_text as string,
+          text: r.display_text,
           notes: [],
           creations: [],
         })),
-      hintCount: session?.hints_given ?? 0,
+      hintCount: hintsGiven,
     });
   },
 

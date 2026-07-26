@@ -4,7 +4,7 @@ import {
   parseWikilinks,
   renderNoteFile,
   validateVaultPath,
-} from "../supabase/functions/_shared/vault.ts";
+} from "../apps/api/src/lib/vault.ts";
 
 describe("validateVaultPath", () => {
   it("accepts well-formed vault paths", () => {

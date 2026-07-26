@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import {
   useMutation,
   useQuery,
@@ -16,88 +15,41 @@ import type {
   Session,
   TreeState,
 } from "@mytutor/shared";
-import { supabase } from "../lib/supabase";
+import { http } from "../lib/http";
 
 export function useCourses() {
   return useQuery({
     queryKey: ["courses"],
-    queryFn: async (): Promise<Course[]> => {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("*")
-        .order("name");
-      if (error) throw error;
-      return data as Course[];
-    },
+    queryFn: () => http.get<Course[]>("/courses"),
   });
 }
 
 export function useMaterials(courseId: string | null) {
-  const queryClient = useQueryClient();
-  const query = useQuery({
+  return useQuery({
     queryKey: ["materials", courseId],
     enabled: !!courseId,
-    queryFn: async (): Promise<Material[]> => {
-      const { data, error } = await supabase
-        .from("materials")
-        .select("*")
-        .eq("course_id", courseId!)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as Material[];
-    },
+    queryFn: () => http.get<Material[]>(`/courses/${courseId}/materials`),
+    // Poll while anything is still processing (replaces Supabase Realtime).
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some(
+          (m) => m.status === "uploaded" || m.status === "processing",
+        )
+        ? 4000
+        : false,
   });
-
-  // Live processing-status updates (uploaded → processing → ready/failed).
-  useEffect(() => {
-    if (!courseId) return;
-    const channel = supabase
-      .channel(`materials-${courseId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "materials",
-          filter: `course_id=eq.${courseId}`,
-        },
-        () => queryClient.invalidateQueries({ queryKey: ["materials", courseId] }),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [courseId, queryClient]);
-
-  return query;
 }
 
 export function useNotes() {
   return useQuery({
     queryKey: ["notes"],
-    queryFn: async (): Promise<Note[]> => {
-      const { data, error } = await supabase
-        .from("notes")
-        .select("id, user_id, course_id, subject, path, title, frontmatter, content, tags, links, source_session_id, updated_at, created_at")
-        .order("path");
-      if (error) throw error;
-      return data as Note[];
-    },
+    queryFn: () => http.get<Note[]>("/notes"),
   });
 }
 
 export function useRecentSessions(limit = 10) {
   return useQuery({
     queryKey: ["sessions", "recent", limit],
-    queryFn: async (): Promise<Session[]> => {
-      const { data, error } = await supabase
-        .from("sessions")
-        .select("*")
-        .order("started_at", { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      return data as Session[];
-    },
+    queryFn: () => http.get<Session[]>(`/sessions?limit=${limit}`),
   });
 }
 
@@ -105,44 +57,19 @@ export function useSession(sessionId: string | null) {
   return useQuery({
     queryKey: ["session", sessionId],
     enabled: !!sessionId,
-    queryFn: async (): Promise<Session> => {
-      const { data, error } = await supabase
-        .from("sessions")
-        .select("*")
-        .eq("id", sessionId!)
-        .single();
-      if (error) throw error;
-      return data as Session;
-    },
+    queryFn: () => http.get<Session>(`/sessions/${sessionId}`),
   });
 }
 
 export function useCreateSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (args: {
+    mutationFn: (args: {
       courseId: string | null;
       mode: string;
       plannedMinutes: number | null;
       subject?: string | null;
-    }): Promise<Session> => {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-      if (!userId) throw new Error("Not signed in");
-      const { data, error } = await supabase
-        .from("sessions")
-        .insert({
-          user_id: userId,
-          course_id: args.courseId,
-          subject: args.subject ?? null,
-          mode: args.mode,
-          planned_minutes: args.plannedMinutes,
-        })
-        .select("*")
-        .single();
-      if (error) throw error;
-      return data as Session;
-    },
+    }) => http.post<Session>("/sessions", args),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
     },
@@ -156,15 +83,9 @@ export function useCreateSession() {
 export function useAssignments(includeDone = true) {
   return useQuery({
     queryKey: ["assignments", includeDone],
-    queryFn: async (): Promise<Assignment[]> => {
-      let q = supabase
-        .from("assignments")
-        .select("*")
-        .order("due_at", { ascending: true, nullsFirst: false });
-      if (!includeDone) q = q.neq("status", "done");
-      const { data, error } = await q;
-      if (error) throw error;
-      return data as Assignment[];
+    queryFn: async () => {
+      const rows = await http.get<Assignment[]>("/assignments");
+      return includeDone ? rows : rows.filter((a) => a.status !== "done");
     },
   });
 }
@@ -172,7 +93,7 @@ export function useAssignments(includeDone = true) {
 export function useSaveAssignment() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (args: {
+    mutationFn: (args: {
       id?: string;
       courseId: string;
       title: string;
@@ -180,26 +101,10 @@ export function useSaveAssignment() {
       dueAt?: string | null;
       estimatedMinutes?: number | null;
       complexity?: string | null;
-    }): Promise<Assignment> => {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-      if (!userId) throw new Error("Not signed in");
-      const row = {
-        user_id: userId,
-        course_id: args.courseId,
-        title: args.title,
-        description: args.description ?? null,
-        due_at: args.dueAt ?? null,
-        estimated_minutes: args.estimatedMinutes ?? null,
-        complexity: args.complexity ?? null,
-      };
-      const query = args.id
-        ? supabase.from("assignments").update(row).eq("id", args.id)
-        : supabase.from("assignments").insert(row);
-      const { data, error } = await query.select("*").single();
-      if (error) throw error;
-      return data as Assignment;
-    },
+    }) =>
+      args.id
+        ? http.patch<Assignment>(`/assignments/${args.id}`, args)
+        : http.post<Assignment>("/assignments", args),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["assignments"] }),
   });
@@ -208,18 +113,8 @@ export function useSaveAssignment() {
 export function useSetAssignmentStatus() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { id: string; status: AssignmentStatus }) => {
-      const { error } = await supabase
-        .from("assignments")
-        .update({
-          status: args.status,
-          completed_at: args.status === "done"
-            ? new Date().toISOString()
-            : null,
-        })
-        .eq("id", args.id);
-      if (error) throw error;
-    },
+    mutationFn: (args: { id: string; status: AssignmentStatus }) =>
+      http.patch(`/assignments/${args.id}`, { status: args.status }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["assignments"] }),
   });
@@ -228,10 +123,7 @@ export function useSetAssignmentStatus() {
 export function useDeleteAssignment() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("assignments").delete().eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: (id: string) => http.del(`/assignments/${id}`),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["assignments"] }),
   });
@@ -240,21 +132,14 @@ export function useDeleteAssignment() {
 export function useGrades() {
   return useQuery({
     queryKey: ["grades"],
-    queryFn: async (): Promise<Grade[]> => {
-      const { data, error } = await supabase
-        .from("grades")
-        .select("*")
-        .order("graded_at", { ascending: false });
-      if (error) throw error;
-      return data as Grade[];
-    },
+    queryFn: () => http.get<Grade[]>("/grades"),
   });
 }
 
 export function useCreateGrade() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (args: {
+    mutationFn: (args: {
       courseId: string;
       title: string;
       score: number;
@@ -264,29 +149,7 @@ export function useCreateGrade() {
       topics: string[];
       assignmentId?: string | null;
       gradedAt?: string | null;
-    }): Promise<Grade> => {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-      if (!userId) throw new Error("Not signed in");
-      const { data, error } = await supabase
-        .from("grades")
-        .insert({
-          user_id: userId,
-          course_id: args.courseId,
-          title: args.title,
-          score: args.score,
-          max_score: args.maxScore,
-          weight: args.weight ?? null,
-          feedback: args.feedback ?? null,
-          topics: args.topics,
-          assignment_id: args.assignmentId ?? null,
-          ...(args.gradedAt ? { graded_at: args.gradedAt } : {}),
-        })
-        .select("*")
-        .single();
-      if (error) throw error;
-      return data as Grade;
-    },
+    }) => http.post<Grade>("/grades", args),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["grades"] }),
   });
 }
@@ -294,31 +157,19 @@ export function useCreateGrade() {
 export function useDailyStats(days = 14) {
   return useQuery({
     queryKey: ["daily-stats", days],
-    queryFn: async (): Promise<DailyStudyStats[]> => {
-      const { data, error } = await supabase.rpc("get_daily_study_stats", {
-        p_days: days,
-      });
-      if (error) throw error;
-      return data as DailyStudyStats[];
-    },
+    queryFn: () => http.get<DailyStudyStats[]>(`/stats/daily?days=${days}`),
   });
 }
 
-/** Latest weekly recap note (written by the weekly-recap function). */
+/** Latest weekly recap note (written by the recap endpoint). */
 export function useLatestRecap() {
   return useQuery({
-    queryKey: ["latest-recap"],
-    queryFn: async (): Promise<Note | null> => {
-      const { data, error } = await supabase
-        .from("notes")
-        .select("*")
-        .like("path", "Recommendations/%")
-        .order("path", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw error;
-      return (data as Note) ?? null;
-    },
+    queryKey: ["notes"],
+    queryFn: () => http.get<Note[]>("/notes"),
+    select: (notes): Note | null =>
+      notes
+        .filter((n) => n.path.startsWith("Recommendations/"))
+        .sort((a, b) => b.path.localeCompare(a.path))[0] ?? null,
   });
 }
 
@@ -335,42 +186,25 @@ export interface PointsSummary {
 export function usePoints() {
   return useQuery({
     queryKey: ["points"],
-    queryFn: async (): Promise<PointsSummary> => {
-      const { data, error } = await supabase.rpc("get_points_summary");
-      if (error) throw error;
-      const row = Array.isArray(data) ? data[0] : data;
-      return {
-        balance: row?.balance ?? 0,
-        lifetime: row?.lifetime ?? 0,
-        week: row?.week ?? 0,
-      };
-    },
+    queryFn: () => http.get<PointsSummary>("/points"),
   });
 }
 
 export function useTreeState() {
   return useQuery({
     queryKey: ["tree"],
-    queryFn: async (): Promise<TreeState | null> => {
-      const { data, error } = await supabase
-        .from("tree_states")
-        .select("*")
-        .maybeSingle();
-      if (error) throw error;
-      return (data as TreeState) ?? null;
-    },
+    queryFn: () => http.get<TreeState | null>("/tree"),
   });
 }
 
 export function usePurchaseTreeItem() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (itemId: string): Promise<number> => {
-      const { data, error } = await supabase.rpc("purchase_tree_item", {
-        p_item_id: itemId,
+    mutationFn: async (itemId: string) => {
+      const res = await http.post<{ balance: number }>("/tree/purchase", {
+        itemId,
       });
-      if (error) throw error;
-      return data as number;
+      return res.balance;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tree"] });
@@ -382,12 +216,7 @@ export function usePurchaseTreeItem() {
 export function useSetEquippedItems() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (items: string[]) => {
-      const { error } = await supabase.rpc("set_equipped_items", {
-        p_items: items,
-      });
-      if (error) throw error;
-    },
+    mutationFn: (items: string[]) => http.post("/tree/equip", { items }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tree"] }),
   });
 }
@@ -403,34 +232,22 @@ export interface FriendRequestRow {
 export function useFriendRequests() {
   return useQuery({
     queryKey: ["friend-requests"],
-    queryFn: async (): Promise<FriendRequestRow[]> => {
-      const { data, error } = await supabase.rpc("get_friend_requests");
-      if (error) throw error;
-      return data as FriendRequestRow[];
-    },
+    queryFn: () => http.get<FriendRequestRow[]>("/friends/requests"),
   });
 }
 
 export function useLeaderboard() {
   return useQuery({
     queryKey: ["leaderboard"],
-    queryFn: async (): Promise<LeaderboardRow[]> => {
-      const { data, error } = await supabase.rpc("get_leaderboard");
-      if (error) throw error;
-      return data as LeaderboardRow[];
-    },
+    queryFn: () => http.get<LeaderboardRow[]>("/leaderboard"),
   });
 }
 
 export function useRequestFriend() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (handle: string) => {
-      const { error } = await supabase.rpc("request_friend", {
-        p_handle: handle.trim().toLowerCase(),
-      });
-      if (error) throw error;
-    },
+    mutationFn: (handle: string) =>
+      http.post("/friends/request", { handle: handle.trim().toLowerCase() }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["friend-requests"] }),
   });
@@ -439,13 +256,8 @@ export function useRequestFriend() {
 export function useRespondFriend() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { friendshipId: string; accept: boolean }) => {
-      const { error } = await supabase.rpc("respond_friend", {
-        p_friendship_id: args.friendshipId,
-        p_accept: args.accept,
-      });
-      if (error) throw error;
-    },
+    mutationFn: (args: { friendshipId: string; accept: boolean }) =>
+      http.post("/friends/respond", args),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["friend-requests"] });
       queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
@@ -455,15 +267,7 @@ export function useRespondFriend() {
 
 export function useSetHandle() {
   return useMutation({
-    mutationFn: async (handle: string) => {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-      if (!userId) throw new Error("Not signed in");
-      const { error } = await supabase
-        .from("profiles")
-        .update({ handle: handle.trim().toLowerCase() })
-        .eq("id", userId);
-      if (error) throw error;
-    },
+    mutationFn: (handle: string) =>
+      http.patch("/profile", { handle: handle.trim().toLowerCase() }),
   });
 }

@@ -1,17 +1,29 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
 } from "react";
-import type { Session } from "@supabase/supabase-js";
 import type { Profile } from "@mytutor/shared";
-import { supabase } from "./supabase";
+import { getToken, http, setToken } from "./http";
+
+export interface AuthSession {
+  userId: string;
+  email: string | null;
+}
 
 interface AuthState {
   loading: boolean;
-  session: Session | null;
+  session: AuthSession | null;
   profile: Profile | null;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (
+    email: string,
+    password: string,
+    displayName: string,
+  ) => Promise<void>;
+  signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -19,41 +31,72 @@ const AuthContext = createContext<AuthState>({
   loading: true,
   session: null,
   profile: null,
+  signIn: async () => {},
+  signUp: async () => {},
+  signOut: async () => {},
   refreshProfile: async () => {},
 });
 
+interface MeResponse {
+  user: { id: string; email: string } | null;
+  profile: Profile | null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
 
-  const loadProfile = async (userId: string | undefined) => {
-    if (!userId) {
+  const loadMe = useCallback(async () => {
+    try {
+      const me = await http.get<MeResponse>("/auth/me");
+      if (me.user) {
+        setSession({ userId: me.user.id, email: me.user.email });
+        setProfile(me.profile);
+      } else {
+        setSession(null);
+        setProfile(null);
+      }
+    } catch {
+      setSession(null);
       setProfile(null);
-      return;
     }
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    setProfile((data as Profile) ?? null);
-  };
+  }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      await loadProfile(data.session?.user.id);
+    (async () => {
+      const token = await getToken();
+      if (token || process.env.EXPO_PUBLIC_DEMO === "1") await loadMe();
       setLoading(false);
+    })();
+  }, [loadMe]);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const res = await http.post<{ token: string }>("/auth/login", {
+      email,
+      password,
     });
-    const { data: sub } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
-        setSession(newSession);
-        await loadProfile(newSession?.user.id);
-        setLoading(false);
-      },
-    );
-    return () => sub.subscription.unsubscribe();
+    await setToken(res.token);
+    await loadMe();
+  }, [loadMe]);
+
+  const signUp = useCallback(
+    async (email: string, password: string, displayName: string) => {
+      const res = await http.post<{ token: string }>("/auth/signup", {
+        email,
+        password,
+        displayName,
+      });
+      await setToken(res.token);
+      await loadMe();
+    },
+    [loadMe],
+  );
+
+  const signOut = useCallback(async () => {
+    await setToken(null);
+    setSession(null);
+    setProfile(null);
   }, []);
 
   return (
@@ -62,7 +105,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         session,
         profile,
-        refreshProfile: () => loadProfile(session?.user.id),
+        signIn,
+        signUp,
+        signOut,
+        refreshProfile: loadMe,
       }}
     >
       {children}

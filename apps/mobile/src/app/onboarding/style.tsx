@@ -13,7 +13,7 @@ import {
   Subtitle,
   Title,
 } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { http } from "@/lib/http";
 import { useAuth } from "@/lib/auth";
 import { colors, spacing } from "@/theme";
 
@@ -27,7 +27,7 @@ const TOGGLES: { key: keyof LearningStylePreferences; label: string }[] = [
 
 export default function OnboardingStyle() {
   const router = useRouter();
-  const { session, refreshProfile } = useAuth();
+  const { refreshProfile } = useAuth();
   const [prefs, setPrefs] = useState<LearningStylePreferences>(
     DEFAULT_LEARNING_STYLE,
   );
@@ -40,22 +40,16 @@ export default function OnboardingStyle() {
   const finish = async () => {
     setBusy(true);
     setError(null);
-    const userId = session!.user.id;
-    const { error: styleErr } = await supabase
-      .from("learning_style_profiles")
-      .update({ preferences: prefs })
-      .eq("user_id", userId);
-    const { error: profileErr } = await supabase
-      .from("profiles")
-      .update({ onboarding_completed: true })
-      .eq("id", userId);
-    setBusy(false);
-    if (styleErr || profileErr) {
-      setError((styleErr ?? profileErr)!.message);
-      return;
+    try {
+      await http.patch("/style", { preferences: prefs });
+      await http.patch("/profile", { onboarding_completed: true });
+      await refreshProfile();
+      router.replace("/(tabs)");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setBusy(false);
     }
-    await refreshProfile();
-    router.replace("/(tabs)");
   };
 
   return (

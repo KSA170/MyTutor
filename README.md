@@ -46,24 +46,22 @@ The full build plan lives in [docs/PLAN.md](docs/PLAN.md).
 
 ```
 apps/mobile        Expo (React Native, TypeScript, expo-router) — iOS-first, runs on web
-packages/shared    Shared types + wire protocol (app ↔ edge functions)
-supabase/
-  migrations/      Postgres schema — RLS on everything
-  functions/
-    tutor-chat/      the agent loop (claude-opus-5, streaming SSE, prompt caching)
-    ingest-material/ upload processing (unpdf/mammoth/Haiku vision + summaries)
-    finish-session/  session close + summary + vault note + points award
-    export-vault/    Obsidian vault .zip export
-    weekly-recap/    AI study-habit recap (on demand or via pg_cron)
-    extract-grade/   photo of a marked test → prefilled grade entry
-    delete-account/  full account + data deletion (App Store requirement)
+apps/api           Node/Hono API — auth (JWT), file storage, the tutor agent
+                   loop (OpenRouter, streaming SSE), ingestion, vault export,
+                   recap, grade extraction, account deletion
+packages/shared    Shared types + wire protocol (app ↔ API)
+apps/api/migrations  Plain-Postgres schema (Render Postgres or any managed PG)
+render.yaml        One-click Render blueprint: API + Postgres + upload disk
 scripts/           seed + curl smoke tests
 ```
 
 Key design decisions:
 
-- **All Claude API calls are server-side** (Supabase Edge Functions). The
-  API key never ships in the app.
+- **All model calls are server-side** through OpenRouter (OpenAI-compatible
+  API) — one env var picks the model. Defaults are cheap
+  (`google/gemini-2.5-flash`); ~$10 of OpenRouter credits goes a long way.
+  Swap `TUTOR_MODEL` for any OpenRouter id (Claude, GPT, DeepSeek…) any time.
+  The API key never ships in the app.
 - **Retrieval without a vector DB** — materials are chunked into Postgres
   full-text search; the agent gets a summarized index of every material in
   its cached context and pulls passages via `search_materials` /
@@ -72,44 +70,46 @@ Key design decisions:
 - **Metrics are event-sourced** — hints/answers/breaks are tool calls the
   agent must make, logged to `session_events`; a trigger maintains rollups.
   The model can't miscount.
-- **Prompt caching discipline** — static tutor prompt + deterministic course
-  context + append-only history; cache reads are asserted in tests and logged
-  per turn.
+- **Deterministic context discipline** — static tutor prompt + deterministic
+  course context + append-only history, so provider-side prompt caching works
+  wherever the chosen model supports it (asserted in tests).
 
 ## Setup
 
-You need: a [Supabase](https://supabase.com) project (free tier is fine), an
-[Anthropic API key](https://console.anthropic.com), Node 20+, and the
-[Supabase CLI](https://supabase.com/docs/guides/cli).
+You need: a Postgres database and a place to run the API — [Render](https://render.com)
+covers both — plus an [OpenRouter](https://openrouter.ai) API key and Node 20+.
+
+**Deploy on Render (recommended):** push this repo to GitHub, then in Render
+choose **New → Blueprint** and point it at the repo. `render.yaml` provisions
+the Postgres database, the API web service (migrations run on every deploy),
+and a persistent disk for uploads. Paste your `OPENROUTER_API_KEY` when
+prompted. Then:
 
 ```bash
-# 1. Install
-npm install
-
-# 2. Link your Supabase project
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-
-# 3. Apply the schema
-supabase db push
-
-# 4. Set the Claude API key for edge functions
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-
-# 5. Deploy edge functions
-supabase functions deploy tutor-chat ingest-material finish-session \
-  export-vault weekly-recap extract-grade delete-account
-
-# 6. Configure the app
 cp apps/mobile/.env.example apps/mobile/.env
-#    → fill in EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY
-
-# 7. Run it
+#    → set EXPO_PUBLIC_API_URL to your Render service URL
+npm install
 npm run web        # browser (fastest for development)
 npm run mobile     # Expo dev server → scan QR with Expo Go on your iPhone
 ```
 
-Optional: regenerate DB types after schema changes with `npm run gen-types`.
+**Local development instead:**
+
+```bash
+npm install
+cp apps/api/.env.example apps/api/.env    # point DATABASE_URL at any Postgres
+npm run migrate                            # apply the schema
+npm run api                                # API on :3000
+# in another terminal:
+EXPO_PUBLIC_API_URL=http://localhost:3000 npm run web
+```
+
+Model choice: `TUTOR_MODEL`/`UTILITY_MODEL` accept any OpenRouter model id.
+The Gemini Flash defaults cost ~$0.30/M input tokens; a Claude model like
+`anthropic/claude-sonnet-4.5` is stronger but ~10× the price — with ~$10 of
+credits, Flash for daily studying and an occasional Claude session is a good
+mix. Web search uses OpenRouter's `:online` variant (disable with
+`WEB_SEARCH=0`).
 
 ## Testing without the app
 
@@ -117,27 +117,24 @@ Optional: regenerate DB types after schema changes with `npm run gen-types`.
 # Unit tests (chunking, vault parsing, SSE parser, prompt determinism)
 npm test
 
-# Seed a test user + course + material, then smoke-test the agent over curl
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... SUPABASE_ANON_KEY=... npm run seed
+# Seed a test user + course + assignments through a running API,
+# then smoke-test the agent over curl
+API_URL=http://localhost:3000 npm run seed
 # → export the printed vars, then:
 ./scripts/smoke-chat.sh
-# Run it twice — the second run asserts prompt-cache hits.
 ```
 
 ## Trust model note
 
-Study metrics (session events, counters) are written through the user's own
-RLS-scoped session, so a technically savvy user could inflate their *own*
-stats/points via the API — acceptable for a personal app where the
-leaderboard is only visible to accepted friends. Item purchases and point
-awards are already server-enforced (SECURITY DEFINER). If leaderboard
-integrity ever matters, move `session_events` writes behind a definer
-function the same way.
+Authorization lives entirely in the API layer — every query is scoped by the
+JWT's user id. Study metrics are written by the agent's tools server-side;
+points awards and tree purchases are enforced in SQL functions, so clients
+can't mint points directly.
 
 ## Cost notes
 
-Tutoring runs on `claude-opus-5` with prompt caching (the static prompt +
-course context are cached; conversation history is append-only), web search
-capped at 5 uses/turn, and bounded tool rounds. Ingestion and summaries run
-on `claude-haiku-4-5`. Per-turn usage (including cache reads) is logged by
-the `tutor-chat` function.
+Tutor turns are bounded (max tool rounds, capped history) and the context
+block is deterministic, so provider-side caching applies where supported.
+Ingestion, summaries, recaps, and grade extraction all run on the cheaper
+`UTILITY_MODEL`. Watch spend live on the OpenRouter dashboard — every request
+is itemized there.

@@ -1,0 +1,34 @@
+# Render blueprint — deploys the MyTutor API + Postgres in one click.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: mytutor-api
+    runtime: node
+    plan: starter          # persistent disk requires a paid instance
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run migrate --workspace @mytutor/api && npm run start --workspace @mytutor/api
+    healthCheckPath: /health
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mytutor-db
+          property: connectionString
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OPENROUTER_API_KEY
+        sync: false        # paste your key in the Render dashboard
+      - key: TUTOR_MODEL
+        value: google/gemini-2.5-flash
+      - key: UTILITY_MODEL
+        value: google/gemini-2.5-flash-lite
+
+databases:
+  - name: mytutor-db
+    plan: basic-256mb

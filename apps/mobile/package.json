@@ -6,7 +6,6 @@
     "@expo/ui": "~57.0.7",
     "@mytutor/shared": "^0.1.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "@supabase/supabase-js": "^2.110.8",
     "@tanstack/react-query": "^5.101.4",
     "expo": "~57.0.8",
     "expo-constants": "~57.0.7",

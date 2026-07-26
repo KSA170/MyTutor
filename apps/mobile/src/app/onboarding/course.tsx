@@ -10,13 +10,13 @@ import {
   Subtitle,
   Title,
 } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { http } from "@/lib/http";
 import { useAuth } from "@/lib/auth";
 import { spacing } from "@/theme";
 
 export default function OnboardingCourse() {
   const router = useRouter();
-  const { session, profile } = useAuth();
+  const { profile } = useAuth();
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [instructor, setInstructor] = useState("");
@@ -32,28 +32,24 @@ export default function OnboardingCourse() {
     }
     setBusy(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("courses")
-      .insert({
-        user_id: session!.user.id,
+    try {
+      const data = await http.post<{ id: string }>("/courses", {
         name: name.trim(),
         subject: subject.trim() || null,
         instructor: instructor.trim() || null,
         term: term.trim() || null,
         curriculum: curriculum.trim() || null,
         grade_level: profile?.grade_level ?? null,
-      })
-      .select("id")
-      .single();
-    setBusy(false);
-    if (err || !data) {
-      setError(err?.message ?? "Could not create course");
-      return;
+      });
+      router.push({
+        pathname: "/onboarding/materials",
+        params: { courseId: data.id },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create course");
+    } finally {
+      setBusy(false);
     }
-    router.push({
-      pathname: "/onboarding/materials",
-      params: { courseId: data.id },
-    });
   };
 
   return (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkPages } from "../supabase/functions/_shared/chunking.ts";
+import { chunkPages } from "../apps/api/src/lib/chunking.ts";
 import { CHUNK_TOKEN_TARGET } from "../packages/shared/src/protocol.ts";
 
 const CHAR_TARGET = CHUNK_TOKEN_TARGET * 4;

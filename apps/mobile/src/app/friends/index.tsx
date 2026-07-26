@@ -40,7 +40,7 @@ export default function Friends() {
   const [respondError, setRespondError] = useState<string | null>(null);
   const [respondingId, setRespondingId] = useState<string | null>(null);
 
-  const myId = session?.user.id;
+  const myId = session?.userId;
   const requests = requestsQuery.data;
   const leaderboard = leaderboardQuery.data;
   const incoming = (requests ?? []).filter((r) => r.direction === "incoming");

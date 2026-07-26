@@ -1,8 +1,8 @@
 /**
  * Demo mode — a fully client-side fixture backend for previews/screenshots.
  *
- * EXPO_PUBLIC_DEMO=1 swaps the Supabase client and API calls for canned
- * data; no network, no keys. EXPO_PUBLIC_DEMO_STATE picks the entry state:
+ * EXPO_PUBLIC_DEMO=1 makes lib/http.ts route every request here instead of
+ * the API; no network, no keys. EXPO_PUBLIC_DEMO_STATE picks the entry state:
  *   "app" (default) — signed in, onboarded, rich data
  *   "onboarding"    — signed in, onboarding not completed
  *   "signedout"     — no session (sign-in screen)
@@ -10,7 +10,7 @@
 import type { SseEvent } from "@mytutor/shared";
 
 export const DEMO = process.env.EXPO_PUBLIC_DEMO === "1";
-const DEMO_STATE = process.env.EXPO_PUBLIC_DEMO_STATE ?? "app";
+export const DEMO_STATE = process.env.EXPO_PUBLIC_DEMO_STATE ?? "app";
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
 const COURSE_ID = "00000000-0000-4000-8000-0000000000c0";
@@ -19,11 +19,7 @@ const day = 86400_000;
 const iso = (t: number) => new Date(t).toISOString();
 const dateStr = (t: number) => new Date(t).toISOString().slice(0, 10);
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-const profiles = [{
+export const demoProfile = {
   id: USER_ID,
   display_name: "Sam",
   handle: "sam_studies",
@@ -32,7 +28,7 @@ const profiles = [{
   timezone: "America/Toronto",
   onboarding_completed: DEMO_STATE !== "onboarding",
   created_at: iso(now - 30 * day),
-}];
+};
 
 const courses = [{
   id: COURSE_ID,
@@ -50,62 +46,46 @@ const courses = [{
 const materials = [
   {
     id: "m-1",
-    user_id: USER_ID,
-    course_id: COURSE_ID,
     title: "Geology Unit Notes.pdf",
     kind: "pdf",
-    storage_path: `${USER_ID}/x/1`,
-    mime_type: "application/pdf",
-    size_bytes: 1_204_000,
     status: "ready",
-    error: null,
     summary: "The three rock types, the rock cycle, plate tectonics.",
     topics: ["rock cycle", "igneous", "plate tectonics"],
     page_count: 24,
-    processed_at: iso(now - 20 * day),
-    created_at: iso(now - 20 * day),
   },
   {
     id: "m-2",
-    user_id: USER_ID,
-    course_id: COURSE_ID,
     title: "Chapter 4 — Minerals.pdf",
     kind: "pdf",
-    storage_path: `${USER_ID}/x/2`,
-    mime_type: "application/pdf",
-    size_bytes: 2_800_000,
     status: "ready",
-    error: null,
     summary: "Mineral identification, hardness scale, crystal structures.",
     topics: ["minerals", "Mohs scale"],
     page_count: 31,
-    processed_at: iso(now - 12 * day),
-    created_at: iso(now - 12 * day),
   },
   {
     id: "m-3",
-    user_id: USER_ID,
-    course_id: COURSE_ID,
     title: "Lab safety slides.pdf",
     kind: "pdf",
-    storage_path: `${USER_ID}/x/3`,
-    mime_type: "application/pdf",
-    size_bytes: 640_000,
     status: "processing",
-    error: null,
     summary: null,
     topics: null,
     page_count: null,
-    processed_at: null,
-    created_at: iso(now - 600_000),
   },
-];
+].map((m, i) => ({
+  user_id: USER_ID,
+  course_id: COURSE_ID,
+  storage_path: `${USER_ID}/x/${i}`,
+  mime_type: "application/pdf",
+  size_bytes: 1_000_000,
+  error: null,
+  processed_at: m.status === "ready" ? iso(now - 10 * day) : null,
+  created_at: iso(now - (20 - i) * day),
+  ...m,
+}));
 
 const sessions = [
   {
     id: "s-1",
-    user_id: USER_ID,
-    course_id: COURSE_ID,
     subject: "Geology",
     mode: "teaching",
     planned_minutes: 45,
@@ -120,12 +100,9 @@ const sessions = [
     breaks_taken: 1,
     creations_made: 0,
     points_awarded: 76,
-    created_at: iso(now - 2 * day),
   },
   {
     id: "s-2",
-    user_id: USER_ID,
-    course_id: COURSE_ID,
     subject: "Geology",
     mode: "creation",
     planned_minutes: 25,
@@ -140,9 +117,13 @@ const sessions = [
     breaks_taken: 0,
     creations_made: 2,
     points_awarded: 43,
-    created_at: iso(now - day),
   },
-];
+].map((s) => ({
+  user_id: USER_ID,
+  course_id: COURSE_ID,
+  created_at: s.started_at,
+  ...s,
+}));
 
 const notes = [
   {
@@ -293,13 +274,6 @@ const grades = [
   ...g,
 }));
 
-const treeStates = [{
-  user_id: USER_ID,
-  owned_items: ["flowers", "birdhouse", "lanterns"],
-  equipped_items: ["flowers", "birdhouse"],
-  updated_at: iso(now - day),
-}];
-
 const dailyStats = Array.from({ length: 14 }, (_, i) => {
   const t = now - (13 - i) * day;
   const pattern = [35, 0, 48, 25, 0, 60, 44, 20, 0, 52, 38, 45, 22, 44];
@@ -351,34 +325,15 @@ const friendRequests = [
   },
 ];
 
-const TABLES: Record<string, unknown[]> = {
-  profiles,
-  courses,
-  materials,
-  sessions,
-  notes,
-  assignments,
-  grades,
-  tree_states: treeStates,
-  learning_style_profiles: [{
-    user_id: USER_ID,
-    preferences: {
-      analogies: true,
-      step_by_step: true,
-      real_world_examples: true,
-      visual: false,
-      socratic: false,
-      pace: "moderate",
-    },
-    style_notes: null,
-    updated_at: iso(now),
-  }],
-  messages: [],
-  session_events: [],
+const tree = {
+  user_id: USER_ID,
+  owned_items: ["flowers", "birdhouse", "lanterns"],
+  equipped_items: ["flowers", "birdhouse"],
+  updated_at: iso(now - day),
 };
 
 // ---------------------------------------------------------------------------
-// Chainable fake query builder (covers every query shape the app uses)
+// Route-level fixture handler — the single demo interception point
 // ---------------------------------------------------------------------------
 
 // deno-lint-ignore no-explicit-any
@@ -386,127 +341,144 @@ type Json = any;
 
 let insertCounter = 0;
 
-function makeBuilder(table: string): Json {
-  const rows = (TABLES[table] ?? []) as Json[];
-  let result: Json[] = [...rows];
-  let single = false;
-  let pendingInsert: Json | null = null;
+export function demoRequest(method: string, path: string, body?: Json): Json {
+  const route = `${method} ${path.split("?")[0]}`;
 
-  const builder: Json = {
-    select: () => builder,
-    order: () => builder,
-    limit: (n: number) => {
-      result = result.slice(0, n);
-      return builder;
-    },
-    eq: (col: string, val: Json) => {
-      result = result.filter((r) => r[col] === val);
-      return builder;
-    },
-    neq: (col: string, val: Json) => {
-      result = result.filter((r) => r[col] !== val);
-      return builder;
-    },
-    like: (col: string, pattern: string) => {
-      const prefix = pattern.replace(/%$/, "");
-      result = result.filter((r) => String(r[col]).startsWith(prefix));
-      return builder;
-    },
-    gte: () => builder,
-    not: () => builder,
-    or: () => builder,
-    in: () => builder,
-    insert: (row: Json) => {
-      pendingInsert = Array.isArray(row) ? row[0] : row;
-      result = [{
+  // Exact routes first
+  switch (route) {
+    case "GET /auth/me":
+      return DEMO_STATE === "signedout"
+        ? { user: null, profile: null }
+        : {
+          user: { id: USER_ID, email: "sam@example.com" },
+          profile: demoProfile,
+        };
+    case "POST /auth/login":
+    case "POST /auth/signup":
+      return { token: "demo-token", userId: USER_ID };
+    case "GET /profile":
+      return demoProfile;
+    case "PATCH /profile":
+      Object.assign(demoProfile, body ?? {});
+      return demoProfile;
+    case "GET /style":
+      return {
+        user_id: USER_ID,
+        preferences: {
+          analogies: true,
+          step_by_step: true,
+          real_world_examples: true,
+          visual: false,
+          socratic: false,
+          pace: "moderate",
+        },
+        style_notes: null,
+      };
+    case "PATCH /style":
+      return { ok: true };
+    case "GET /courses":
+      return courses;
+    case "POST /courses": {
+      const course = {
+        ...courses[0],
+        id: `demo-course-${++insertCounter}`,
+        ...body,
+      };
+      return course;
+    }
+    case "GET /sessions":
+      return sessions;
+    case "POST /sessions": {
+      const session = {
         id: `demo-${++insertCounter}`,
-        created_at: iso(now),
+        user_id: USER_ID,
+        course_id: body?.courseId ?? COURSE_ID,
+        subject: body?.subject ?? null,
+        mode: body?.mode ?? "teaching",
+        planned_minutes: body?.plannedMinutes ?? null,
         started_at: iso(now),
+        ended_at: null,
         status: "active",
-        ...pendingInsert,
-      }];
-      if (table === "sessions") {
-        result[0].questions_answered = 0;
-        result[0].hints_given = 0;
-        result[0].answers_revealed = 0;
-        result[0].creations_made = 0;
-        result[0].points_awarded = 0;
-        TABLES.sessions = [...(TABLES.sessions as Json[]), result[0]];
-      }
-      return builder;
-    },
-    update: () => builder,
-    upsert: () => builder,
-    delete: () => builder,
-    single: () => {
-      single = true;
-      return builder;
-    },
-    maybeSingle: () => {
-      single = true;
-      return builder;
-    },
-    then: (resolve: (v: Json) => void, reject?: (e: Json) => void) => {
-      const data = single ? (result[0] ?? null) : result;
-      return Promise.resolve({ data, error: null, count: result.length })
-        .then(resolve, reject);
-    },
-  };
-  return builder;
+        summary: null,
+        questions_answered: 0,
+        hints_given: 0,
+        answers_revealed: 0,
+        breaks_taken: 0,
+        creations_made: 0,
+        points_awarded: 0,
+        created_at: iso(now),
+      };
+      sessions.unshift(session as Json);
+      return session;
+    }
+    case "GET /notes":
+      return notes;
+    case "GET /assignments":
+      return assignments;
+    case "POST /assignments":
+      return { id: `demo-a-${++insertCounter}`, ...body };
+    case "GET /grades":
+      return grades;
+    case "POST /grades":
+      return { id: `demo-g-${++insertCounter}`, ...body };
+    case "POST /extract-grade":
+      return {
+        title: "Geology quiz 2",
+        score: 8,
+        max_score: 10,
+        feedback: "Much better on cooling rates!",
+        topics: ["igneous rocks", "rock cycle"],
+      };
+    case "GET /stats/daily":
+      return dailyStats;
+    case "GET /points":
+      return { balance: 185, lifetime: 620, week: 210 };
+    case "GET /tree":
+      return tree;
+    case "POST /tree/purchase":
+      return { balance: 125 };
+    case "POST /tree/equip":
+      return { ok: true };
+    case "GET /friends/requests":
+      return friendRequests;
+    case "POST /friends/request":
+      return { requested: true };
+    case "POST /friends/respond":
+      return { ok: true };
+    case "GET /leaderboard":
+      return leaderboard;
+    case "POST /recap":
+      return { recap: "Recap refreshed (demo).", notePath: null };
+    case "DELETE /account":
+      return { deleted: true };
+    case "POST /materials":
+      return { id: `demo-m-${++insertCounter}`, status: "uploaded", ...body };
+  }
+
+  // Parameterized routes
+  const sessionMatch = path.match(/^\/sessions\/([^/]+)$/);
+  if (method === "GET" && sessionMatch) {
+    return sessions.find((s) => s.id === sessionMatch[1]) ?? sessions[0];
+  }
+  if (method === "GET" && /^\/sessions\/[^/]+\/messages$/.test(path)) {
+    return [];
+  }
+  if (method === "GET" && /^\/courses\/[^/]+\/materials$/.test(path)) {
+    return materials;
+  }
+  if (method === "PATCH" && /^\/assignments\//.test(path)) {
+    const id = path.split("/")[2];
+    const a = assignments.find((x) => x.id === id);
+    if (a) Object.assign(a, body ?? {});
+    return a ?? { ok: true };
+  }
+  if (method === "DELETE" && /^\/assignments\//.test(path)) {
+    return { deleted: true };
+  }
+
+  console.warn(`demoRequest: unhandled route ${route}`);
+  return {};
 }
-
-const demoSession = DEMO_STATE === "signedout" ? null : {
-  access_token: "demo-token",
-  user: { id: USER_ID, email: "sam@example.com" },
-};
-
-export const demoSupabase: Json = {
-  auth: {
-    getSession: () => Promise.resolve({ data: { session: demoSession } }),
-    getUser: () =>
-      Promise.resolve({
-        data: { user: demoSession?.user ?? null },
-        error: null,
-      }),
-    onAuthStateChange: (_cb: Json) => ({
-      data: { subscription: { unsubscribe: () => {} } },
-    }),
-    signInWithPassword: () => Promise.resolve({ error: null }),
-    signUp: () => Promise.resolve({ error: null }),
-    signOut: () => Promise.resolve({ error: null }),
-  },
-  from: (table: string) => makeBuilder(table),
-  rpc: (name: string) => {
-    const data = name === "get_daily_study_stats"
-      ? dailyStats
-      : name === "get_points_summary"
-      ? [{ balance: 185, lifetime: 620, week: 210 }]
-      : name === "get_leaderboard"
-      ? leaderboard
-      : name === "get_friend_requests"
-      ? friendRequests
-      : name === "purchase_tree_item"
-      ? 125
-      : name === "award_session_points"
-      ? 58
-      : null;
-    return Promise.resolve({ data, error: null });
-  },
-  channel: () => ({
-    on: function (this: Json) {
-      return this;
-    },
-    subscribe: () => ({}),
-  }),
-  removeChannel: () => {},
-  storage: {
-    from: () => ({
-      upload: () => Promise.resolve({ error: null }),
-      download: () =>
-        Promise.resolve({ data: new Blob(["demo"]), error: null }),
-    }),
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Canned tutoring stream (teaching mode, geology)
@@ -528,11 +500,7 @@ export async function demoStreamTutorChat(
     label: "Searching materials: crystal size cooling rate",
   });
   await sleep(800);
-  onEvent({
-    type: "tool",
-    name: "give_hint",
-    label: "Preparing a hint",
-  });
+  onEvent({ type: "tool", name: "give_hint", label: "Preparing a hint" });
   await sleep(400);
   onEvent({
     type: "hint",

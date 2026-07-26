@@ -4,42 +4,41 @@ import {
   modeInstruction,
   stableJson,
   STATIC_TUTOR_PROMPT,
-} from "../supabase/functions/_shared/prompts.ts";
+  type Db,
+} from "../apps/api/src/lib/prompts.ts";
 
-/**
- * Minimal chainable fake of the supabase query builder — enough for
- * buildCourseContext's query shapes (select/eq/order/single chains).
- */
-// deno-lint-ignore-file no-explicit-any
+/** Fake Db routing on SQL text — enough for buildCourseContext's queries. */
+// deno-lint-ignore no-explicit-any
+type Json = any;
+
 function fakeDb(fixtures: {
-  profiles?: any;
-  learning_style_profiles?: any;
-  courses?: any;
-  materials?: any[];
-  grades?: any[];
-  assignments?: any[];
-}) {
+  profile?: Json;
+  style?: Json;
+  course?: Json;
+  materials?: Json[];
+  grades?: Json[];
+  assignments?: Json[];
+}): Db {
+  const route = (sql: string): Json => {
+    if (sql.includes("from profiles")) return fixtures.profile ?? null;
+    if (sql.includes("from learning_style_profiles")) {
+      return fixtures.style ?? null;
+    }
+    if (sql.includes("from courses")) return fixtures.course ?? null;
+    if (sql.includes("from materials")) return fixtures.materials ?? [];
+    if (sql.includes("from grades")) return fixtures.grades ?? [];
+    if (sql.includes("from assignments")) return fixtures.assignments ?? [];
+    throw new Error(`unrouted sql: ${sql}`);
+  };
   return {
-    from(table: string) {
-      const fixture = (fixtures as any)[table];
-      const builder: any = {
-        select: () => builder,
-        eq: () => builder,
-        neq: () => builder,
-        order: () => builder,
-        limit: () => builder,
-        single: () => Promise.resolve({ data: fixture ?? null }),
-        then: (resolve: (v: any) => void) =>
-          Promise.resolve({ data: fixture ?? [] }).then(resolve),
-      };
-      return builder;
-    },
-  } as any;
+    q: async (sql) => route(sql) ?? [],
+    one: async (sql) => route(sql),
+  };
 }
 
 const FIXTURES = {
-  profiles: { display_name: "Sam", grade_level: "Grade 10", program: "IB" },
-  learning_style_profiles: {
+  profile: { display_name: "Sam", grade_level: "Grade 10", program: "IB" },
+  style: {
     preferences: {
       pace: "moderate",
       analogies: true,
@@ -50,7 +49,7 @@ const FIXTURES = {
     },
     style_notes: "- Prefers sports analogies",
   },
-  courses: {
+  course: {
     name: "Science 10",
     subject: "Science",
     grade_level: "Grade 10",
@@ -91,8 +90,8 @@ const FIXTURES = {
 
 describe("buildCourseContext determinism (the cache invariant)", () => {
   it("produces byte-identical output for identical DB state", async () => {
-    const a = await buildCourseContext(fakeDb(FIXTURES), "u1", "c1");
-    const b = await buildCourseContext(fakeDb(FIXTURES), "u1", "c1");
+    const a = await buildCourseContext("u1", "c1", fakeDb(FIXTURES));
+    const b = await buildCourseContext("u1", "c1", fakeDb(FIXTURES));
     expect(a).toBe(b);
     expect(a).toContain("Science 10");
     expect(a).toContain("Lecture 1");
@@ -105,8 +104,8 @@ describe("buildCourseContext determinism (the cache invariant)", () => {
   it("is insensitive to JSON key order in preferences", async () => {
     const reordered = {
       ...FIXTURES,
-      learning_style_profiles: {
-        ...FIXTURES.learning_style_profiles,
+      style: {
+        ...FIXTURES.style,
         preferences: {
           socratic: false,
           visual: false,
@@ -117,13 +116,13 @@ describe("buildCourseContext determinism (the cache invariant)", () => {
         },
       },
     };
-    const a = await buildCourseContext(fakeDb(FIXTURES), "u1", "c1");
-    const b = await buildCourseContext(fakeDb(reordered), "u1", "c1");
+    const a = await buildCourseContext("u1", "c1", fakeDb(FIXTURES));
+    const b = await buildCourseContext("u1", "c1", fakeDb(reordered));
     expect(a).toBe(b);
   });
 
   it("handles the no-course case", async () => {
-    const out = await buildCourseContext(fakeDb(FIXTURES), "u1", null);
+    const out = await buildCourseContext("u1", null, fakeDb(FIXTURES));
     expect(out).toContain("no course selected");
   });
 });
@@ -146,6 +145,8 @@ describe("static prompt", () => {
       "reveal_answer",
       "create_study_material",
       "create_note",
+      "create_assignment",
+      "log_grade",
       "[[wikilinks]]",
     ]) {
       expect(STATIC_TUTOR_PROMPT).toContain(needle);

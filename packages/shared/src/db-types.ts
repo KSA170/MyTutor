@@ -1,11 +1,5 @@
 /**
- * Placeholder for Supabase generated types.
- *
- * After linking a Supabase project, regenerate with:
- *   npm run gen-types
- * (i.e. `supabase gen types typescript --linked > packages/shared/src/db-types.ts`)
- *
- * Until then the client is effectively untyped; app code uses the hand-written
- * row models in models.ts.
+ * Legacy placeholder kept for import stability. Row models live in
+ * models.ts; the API owns the schema (apps/api/migrations).
  */
-export type Database = any;
+export type Database = unknown;

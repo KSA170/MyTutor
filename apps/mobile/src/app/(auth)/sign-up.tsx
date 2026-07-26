@@ -9,11 +9,12 @@ import {
   Subtitle,
   Title,
 } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
 import { ThemedText } from "@/components/themed-text";
 import { colors, spacing } from "@/theme";
 
 export default function SignUp() {
+  const auth = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,13 +28,13 @@ export default function SignUp() {
     }
     setBusy(true);
     setError(null);
-    const { error: err } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { data: { display_name: name.trim() } },
-    });
-    if (err) setError(err.message);
-    setBusy(false);
+    try {
+      await auth.signUp(email.trim(), password, name.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-up failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

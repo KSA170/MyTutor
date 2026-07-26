@@ -11,8 +11,9 @@
     "web": "npm run web --workspace mobile",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
-    "gen-types": "supabase gen types typescript --linked > packages/shared/src/db-types.ts",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "api": "npm run dev --workspace @mytutor/api",
+    "migrate": "npm run migrate --workspace @mytutor/api"
   },
   "devDependencies": {
     "playwright-core": "^1.62.0",

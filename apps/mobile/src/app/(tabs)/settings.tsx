@@ -12,13 +12,13 @@ import {
   Title,
 } from "@/components/ui";
 import { deleteAccount, downloadVaultZip } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useChatStore } from "@/state/chat";
 import { colors, spacing } from "@/theme";
 
 export default function Settings() {
-  const { session, profile } = useAuth();
+  const auth = useAuth();
+  const { session, profile } = auth;
   const resetChat = useChatStore((s) => s.reset);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export default function Settings() {
 
   const signOut = async () => {
     resetChat();
-    await supabase.auth.signOut();
+    await auth.signOut();
   };
 
   const confirmDeleteAccount = () => {
@@ -62,7 +62,7 @@ export default function Settings() {
       try {
         await deleteAccount();
         resetChat();
-        await supabase.auth.signOut();
+        await auth.signOut();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Deletion failed");
       }
@@ -94,7 +94,7 @@ export default function Settings() {
           {profile?.display_name ?? "Student"}
         </Text>
         <Text style={{ color: colors.textMuted }}>
-          {session?.user.email}
+          {session?.email}
         </Text>
         {profile?.grade_level && (
           <Text style={{ color: colors.textMuted }}>
